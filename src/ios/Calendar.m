@@ -116,15 +116,6 @@
   NSNumber* nstartTime = [options objectForKey:@"newStartTime"];
   NSNumber* nendTime   = [options objectForKey:@"newEndTime"];
 
-  NSTimeInterval _startInterval = [startTime doubleValue] / 1000; // strip millis
-  NSDate *myStartDate = [NSDate dateWithTimeIntervalSince1970:_startInterval];
-
-  NSTimeInterval _endInterval = [endTime doubleValue] / 1000; // strip millis
-  NSDate *myEndDate = [NSDate dateWithTimeIntervalSince1970:_endInterval];
-
-  NSDateFormatter *df = [[NSDateFormatter alloc] init];
-  [df setDateFormat:@"yyyy-MM-dd HH:mm:ss"];
-
   NSDictionary* calOptions = [options objectForKey:@"options"];
   NSString* calEventID = [calOptions objectForKey:@"id"];
   // the only search param we're currently matching against is the calendarName, so ignoring any passed reminder values etc
@@ -161,8 +152,15 @@
       }
 
     if (theEvent == nil) {
-      NSArray *matchingEvents = [self findEKEventsWithTitle:title location:location notes:notes startDate:myStartDate endDate:myEndDate calendars:calendars];
+      NSTimeInterval _startInterval = [startTime doubleValue] / 1000; // strip millis
+      NSDate *myStartDate = [NSDate dateWithTimeIntervalSince1970:_startInterval];
 
+      NSTimeInterval _endInterval = [endTime doubleValue] / 1000; // strip millis
+      NSDate *myEndDate = [NSDate dateWithTimeIntervalSince1970:_endInterval];
+
+      NSDateFormatter *df = [[NSDateFormatter alloc] init];
+      [df setDateFormat:@"yyyy-MM-dd HH:mm:ss"];
+      NSArray *matchingEvents = [self findEKEventsWithTitle:title location:location notes:notes startDate:myStartDate endDate:myEndDate calendars:calendars];
       if (matchingEvents.count == 1) {
 
         // Presume we have to have an exact match to modify it!
@@ -259,6 +257,55 @@
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
   }];
 
+}
+
+- (void) findEventWithId:(CDVInvokedUrlCommand*)command {
+  NSDictionary* options = [command.arguments objectAtIndex:0];
+  NSString* eventId = [options objectForKey:@"eventId"];
+
+  // actually the only option we're currently using is calendarName
+  NSDictionary* calOptions = [options objectForKey:@"options"];
+  NSString* calendarName = [calOptions objectForKey:@"calendarName"];
+
+  [self.commandDelegate runInBackground: ^{
+
+    NSArray* calendars = nil;
+
+    if (calendarName == (id)[NSNull null]) {
+        calendars = [self.eventStore calendarsForEntityType:EKEntityTypeEvent];
+      if (calendars.count == 0) {
+        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"No default calendar found. Is access to the Calendar blocked for this app?"];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        return;
+      }
+    } else {
+      EKCalendar * calendar = [self findEKCalendar:calendarName];
+
+      if (calendar == nil) {
+        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Could not find calendar"];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        return;
+      } else {
+          calendars = [NSArray arrayWithObject:calendar];
+      }
+    }
+
+    // Find matches
+    EKCalendarItem *theEvent = nil;
+    if (eventId != nil) {
+      theEvent = [self.eventStore eventWithIdentifier:eventId];
+    }
+
+    NSArray *matchingEvents;
+
+    if (theEvent != nil) {
+      matchingEvents = [NSArray arrayWithObject:theEvent];
+    }
+
+    NSMutableArray * eventsDataArray = [self eventsToDataArray:matchingEvents];
+    CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus: CDVCommandStatus_OK messageAsArray:eventsDataArray];
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+  }];
 }
 
 
@@ -382,6 +429,7 @@
   [df setDateFormat:@"yyyy-MM-dd HH:mm:ss"];
 
   for (EKEvent * event in matchingEvents) {
+    NSString *isAllDay = event.isAllDay ? @"YES" : @"NO";
     NSMutableDictionary *entry = [[NSMutableDictionary alloc] initWithObjectsAndKeys:
                                   event.title, @"title",
                                   event.calendar.title, @"calendar",
@@ -389,6 +437,7 @@
                                   [df stringFromDate:event.startDate], @"startDate",
                                   [df stringFromDate:event.endDate], @"endDate",
                                   [df stringFromDate:event.lastModifiedDate], @"lastModifiedDate",
+                                  isAllDay, @"allday",
                                   nil];
     // optional fields
     if (event.location != nil) {
@@ -396,6 +445,15 @@
     }
     if (event.notes != nil) {
       [entry setObject:event.notes forKey:@"message"];
+    }
+    if (event.organizer != nil) {
+      NSString *isCurrentUser = event.organizer.isCurrentUser ? @"YES" : @"NO";
+      NSMutableDictionary *organizer = [[NSMutableDictionary alloc] initWithObjectsAndKeys:
+                                            event.organizer.name, @"name",
+                                            isCurrentUser, @"isCurrentUser",
+                                            [event.organizer.URL absoluteString], @"URL",
+                                            nil];
+      [entry setObject:organizer forKey:@"organizer"];
     }
     if (event.attendees != nil) {
       NSMutableArray * attendees = [[NSMutableArray alloc] init];
@@ -446,6 +504,64 @@
 
         NSNumber *interval = [NSNumber numberWithInteger: rule.interval];
         [rrule setObject:interval forKey:@"interval"];
+          if (rule.daysOfTheWeek != nil && rule.daysOfTheWeek != (id)[NSNull null]) {
+              NSMutableArray<NSMutableDictionary *> * daysOfTheWeek = [[NSMutableArray alloc] initWithCapacity:rule.daysOfTheWeek.count];
+              for (EKRecurrenceDayOfWeek * day in rule.daysOfTheWeek) {
+                  NSNumber * dayOfTheWeek = nil;
+                  NSInteger weekNumber = day.weekNumber;
+                  switch(day.dayOfTheWeek) {
+                      case EKWeekdaySunday:
+                          dayOfTheWeek = [NSNumber numberWithInt:1];
+                          break;
+                      case EKWeekdayMonday:
+                          dayOfTheWeek = [NSNumber numberWithInt:2];
+                          break;
+                      case EKWeekdayTuesday:
+                          dayOfTheWeek = [NSNumber numberWithInt:3];
+                          break;
+                      case EKWeekdayWednesday:
+                          dayOfTheWeek = [NSNumber numberWithInt:4];
+                          break;
+                      case EKWeekdayThursday:
+                          dayOfTheWeek = [NSNumber numberWithInt:5];
+                          break;
+                      case EKWeekdayFriday:
+                          dayOfTheWeek = [NSNumber numberWithInt:6];
+                          break;
+                      case EKWeekdaySaturday:
+                          dayOfTheWeek = [NSNumber numberWithInt:7];
+                          break;
+                      
+                  }
+                  NSMutableDictionary * dayEntry = [[NSMutableDictionary alloc] initWithObjectsAndKeys:
+                  dayOfTheWeek, @"dayOfTheWeek",
+                  [NSNumber numberWithInteger:weekNumber], @"weekNumber",
+                  nil];
+                  [daysOfTheWeek addObject:dayEntry];
+              }
+              [rrule setObject:daysOfTheWeek forKey:@"daysOfWeek"];
+          }
+        
+          if (rule.daysOfTheMonth != nil && rule.daysOfTheMonth != (id)[NSNull null]) {
+              [rrule setObject:rule.daysOfTheMonth forKey:@"daysOfTheMonth"];\
+          }
+          
+          if (rule.daysOfTheYear != nil && rule.daysOfTheYear != (id)[NSNull null]) {
+              [rrule setObject:rule.daysOfTheYear forKey:@"daysOfTheYear"];
+          }
+          
+          if (rule.weeksOfTheYear != nil && rule.weeksOfTheYear != (id)[NSNull null]) {
+              [rrule setObject:rule.weeksOfTheYear forKey:@"weeksOfTheYear"];
+          }
+          
+          if (rule.monthsOfTheYear != nil && rule.monthsOfTheYear != (id)[NSNull null]) {
+              [rrule setObject:rule.monthsOfTheYear forKey:@"monthsOfTheYear"];
+          }
+          
+          if (rule.setPositions != nil && rule.setPositions != (id)[NSNull null]) {
+              [rrule setObject:rule.setPositions forKey:@"setPositions"];
+          }
+           
 
       if (rule.recurrenceEnd != nil) {
         NSMutableDictionary *until = [[NSMutableDictionary alloc] init];
@@ -551,6 +667,11 @@
   NSString* calendarName = [calOptions objectForKey:@"calendarName"];
   NSString* url = [calOptions objectForKey:@"url"];
 
+  NSArray<NSArray<NSNumber *> *> * daysOfTheWeek = [calOptions objectForKey:@"recurrenceDaysOfTheWeek"];
+  NSNumber* setPosition = [calOptions objectForKey:@"recurrenceSetPosition"];
+  NSNumber* dayOfTheMonth = [calOptions objectForKey:@"recurrenceDayOfTheMonth"];
+  NSNumber* monthOfTheYear = [calOptions objectForKey:@"recurrenceMonthOfTheYear"];
+   
   [self.commandDelegate runInBackground: ^{
     EKEvent *myEvent = [EKEvent eventWithEventStore: self.eventStore];
     if (url != (id)[NSNull null]) {
@@ -621,8 +742,46 @@
     }
 
     if (recurrence != (id)[NSNull null]) {
+        NSMutableArray<EKRecurrenceDayOfWeek *> * daysOfTheWeekEK = nil;
+        NSMutableArray<NSNumber *> * dayOfTheMonthEK = nil;
+        NSMutableArray<NSNumber *> * monthOfTheYearEK = nil;
+        NSMutableArray<NSNumber *> * setPositionEK = nil;
+        
+        if (daysOfTheWeek != (id)[NSNull null]) {
+          NSArray<NSNumber *> * day;
+          daysOfTheWeekEK = [[NSMutableArray alloc] initWithCapacity:daysOfTheWeek.count];
+          for (day in daysOfTheWeek) {
+              EKWeekday weekday = ([day objectAtIndex:0]).intValue;
+              NSInteger weekNumber = ([day objectAtIndex:1]).intValue;
+              EKRecurrenceDayOfWeek * dayOfTheWeek = [[EKRecurrenceDayOfWeek alloc] initWithDayOfTheWeek: weekday
+                                                                                             weekNumber: weekNumber];
+              [daysOfTheWeekEK addObject:dayOfTheWeek];
+          }
+      }
+        
+        if (dayOfTheMonth != (id)[NSNull null] && dayOfTheMonth != nil) {
+            dayOfTheMonthEK = [[NSMutableArray alloc] initWithCapacity:1];
+            [dayOfTheMonthEK addObject:dayOfTheMonth];
+        }
+        
+        if (monthOfTheYear != (id)[NSNull null] && monthOfTheYear != nil) {
+            monthOfTheYearEK = [[NSMutableArray alloc] initWithCapacity:1];
+            [monthOfTheYearEK addObject:monthOfTheYear];
+        }
+        
+        if (setPosition != (id)[NSNull null] && setPosition != nil) {
+            setPositionEK = [[NSMutableArray alloc] initWithCapacity:1];;
+            [setPositionEK addObject:setPosition];
+        }
+        
       EKRecurrenceRule *rule = [[EKRecurrenceRule alloc] initRecurrenceWithFrequency: [self toEKRecurrenceFrequency:recurrence]
                                                                             interval: recurrenceIntervalAmount.integerValue
+                                                                       daysOfTheWeek: daysOfTheWeekEK
+                                                                    daysOfTheMonth: dayOfTheMonthEK
+                                                                    monthsOfTheYear: monthOfTheYearEK
+                                                                     weeksOfTheYear: nil
+                                                                      daysOfTheYear: nil
+                                                                       setPositions: setPositionEK
                                                                                  end: nil];
       if (recurrenceEndTime != nil) {
         NSTimeInterval _recurrenceEndTimeInterval = [recurrenceEndTime doubleValue] / 1000; // strip millis
