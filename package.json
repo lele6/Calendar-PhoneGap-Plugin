@@ -1,9 +1,9 @@
 {
-  "name": "cordova-plugin-calendar",
-  "version": "5.1.5",
+  "name": "cordova-plugin-calendar-cxm",
+  "version": "5.1.5.0",
   "description": "This plugin allows you to manipulate the native calendar.",
   "cordova": {
-    "id": "cordova-plugin-calendar",
+    "id": "cordova-plugin-calendar-cxm",
     "platforms": [
       "ios",
       "android"
@@ -11,7 +11,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/EddyVerbruggen/Calendar-PhoneGap-Plugin.git"
+    "url": "git+https://github.com/lele6/Calendar-PhoneGap-Plugin.git"
   },
   "keywords": [
     "Calendar",
