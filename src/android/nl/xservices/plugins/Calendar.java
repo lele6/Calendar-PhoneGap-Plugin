@@ -573,6 +573,8 @@ public class Calendar extends CordovaPlugin {
                     getPossibleNullString("recurrenceWeekstart", argOptionsObject),
                     getPossibleNullString("recurrenceByDay", argOptionsObject),
                     getPossibleNullString("recurrenceByMonthDay", argOptionsObject),
+                    getPossibleNullString("recurrenceByMonth", argOptionsObject),
+                    getPossibleNullString("recurrenceBySetpos", argOptionsObject),
                     argOptionsObject.optLong("recurrenceEndTime", -1),
                     argOptionsObject.optLong("recurrenceCount", -1),
                     getPossibleNullString("allday", argOptionsObject),

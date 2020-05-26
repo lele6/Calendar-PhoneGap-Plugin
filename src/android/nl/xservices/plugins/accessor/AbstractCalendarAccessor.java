@@ -34,6 +34,7 @@ public abstract class AbstractCalendarAccessor {
     public static final String CONTENT_PROVIDER_PATH_ATTENDEES = "/attendees";
 
     protected static class Event {
+        String organizer;
         String id;
         String message;
         String location;
@@ -73,6 +74,7 @@ public abstract class AbstractCalendarAccessor {
                     obj.put("endDate", sdf.format(new Date(Long.parseLong(this.endDate))));
                 }
                 obj.put("allday", this.allDay);
+                obj.put("organizer", this.organizer);
                 if (this.attendees != null) {
                     JSONArray arr = new JSONArray();
                     for (Attendee attendee : this.attendees) {
@@ -152,7 +154,8 @@ public abstract class AbstractCalendarAccessor {
         ATTENDEES_EVENT_ID,
         ATTENDEES_NAME,
         ATTENDEES_EMAIL,
-        ATTENDEES_STATUS
+        ATTENDEES_STATUS,
+        EVENTS_ORGANIZER
     }
 
     protected abstract EnumMap<KeyIndex, String> initContentProviderKeys();
@@ -333,7 +336,8 @@ public abstract class AbstractCalendarAccessor {
                 this.getKey(KeyIndex.EVENTS_START),
                 this.getKey(KeyIndex.EVENTS_END),
                 this.getKey(KeyIndex.EVENTS_RRULE),
-                this.getKey(KeyIndex.EVENTS_ALL_DAY)
+                this.getKey(KeyIndex.EVENTS_ALL_DAY),
+                this.getKey(KeyIndex.EVENTS_ORGANIZER)
         };
         // Get all the ids at once from active calendars.
         StringBuffer select = new StringBuffer();
@@ -399,6 +403,7 @@ public abstract class AbstractCalendarAccessor {
                     event.recurring = false;
                 }
                 event.allDay = cursor.getInt(cols[7]) != 0;
+                event.organizer = cursor.getString(cols[8]);
                 eventsMap.put(event.id, event);
             } while (cursor.moveToNext());
             cursor.close();
@@ -497,6 +502,7 @@ public abstract class AbstractCalendarAccessor {
 
                 instance.allDay = event.allDay;
                 instance.attendees = attendeeMap.get(instance.eventId);
+                instance.organizer = event.organizer;
                 result.put(instance.toJSONObject());
             }
         }
@@ -595,7 +601,8 @@ public abstract class AbstractCalendarAccessor {
     public String createEvent(Uri eventsUri, String title, long startTime, long endTime, String description,
                               String location, Long firstReminderMinutes, Long secondReminderMinutes,
                               String recurrence, int recurrenceInterval, String recurrenceWeekstart,
-                              String recurrenceByDay, String recurrenceByMonthDay, Long recurrenceEndTime, Long recurrenceCount,
+                              String recurrenceByDay, String recurrenceByMonthDay, String recurrenceByMonth,
+                              String recurrenceBySetpos, Long recurrenceEndTime, Long recurrenceCount,
                               String allday,
                               Integer calendarId, String url) {
         ContentResolver cr = this.cordova.getActivity().getContentResolver();
@@ -632,6 +639,8 @@ public abstract class AbstractCalendarAccessor {
                     ((recurrenceWeekstart != null) ? ";WKST=" + recurrenceWeekstart : "") +
                     ((recurrenceByDay != null) ? ";BYDAY=" + recurrenceByDay : "") +
                     ((recurrenceByMonthDay != null) ? ";BYMONTHDAY=" + recurrenceByMonthDay : "") +
+                    ((recurrenceByMonth != null) ? ";BYMONTH=" + recurrenceByMonth : "") +
+                    ((recurrenceBySetpos != null) ? ";BYSETPOS=" + recurrenceBySetpos : "") +
                     ((recurrenceEndTime > -1) ? ";UNTIL=" + nl.xservices.plugins.Calendar.formatICalDateTime(new Date(recurrenceEndTime)) : "") +
                     ((recurrenceCount > -1) ? ";COUNT=" + recurrenceCount : "");
             values.put(Events.RRULE, rrule);
