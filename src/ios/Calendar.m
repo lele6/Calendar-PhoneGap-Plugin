@@ -120,6 +120,10 @@
   NSString* calEventID = [calOptions objectForKey:@"id"];
   // the only search param we're currently matching against is the calendarName, so ignoring any passed reminder values etc
   NSString* calendarName = [calOptions objectForKey:@"calendarName"];
+    
+  NSDictionary* newCalOptions = [options objectForKey:@"newOptions"];
+  NSString* newCalendarName = [newCalOptions objectForKey:@"calendarName"];
+  NSString* modifyTarget = [newCalOptions objectForKey:@"modifyTarget"];
 
 
   [self.commandDelegate runInBackground: ^{
@@ -147,7 +151,7 @@
       EKEvent *theEvent = nil;
 
       // Find matches
-      if (calEventID != nil) {
+      if (calEventID != nil && ![modifyTarget isEqualToString:@"instance"]) {
           theEvent = (EKEvent *)[self.eventStore eventWithIdentifier:calEventID];
       }
 
@@ -162,17 +166,25 @@
       [df setDateFormat:@"yyyy-MM-dd HH:mm:ss"];
       NSArray *matchingEvents = [self findEKEventsWithTitle:title location:location notes:notes startDate:myStartDate endDate:myEndDate calendars:calendars];
       if (matchingEvents.count == 1) {
-
-        // Presume we have to have an exact match to modify it!
-        // Need to load this event from an EKEventStore so we can edit it
-        theEvent = [self.eventStore eventWithIdentifier:((EKEvent*)[matchingEvents lastObject]).eventIdentifier];
+          if ([modifyTarget isEqualToString:@"instance"]) {
+              theEvent = (EKEvent*)[matchingEvents lastObject];
+          } else {
+              // Presume we have to have an exact match to modify it!
+              // Need to load this event from an EKEventStore so we can edit it
+              theEvent = [self.eventStore eventWithIdentifier:((EKEvent*)[matchingEvents lastObject]).eventIdentifier];
+          }
+      } else if ([modifyTarget isEqualToString:@"instance"]) {
+          for (EKEvent *filteredEvent in matchingEvents) {
+              if ([filteredEvent.eventIdentifier isEqualToString:calEventID]) {
+                  theEvent = filteredEvent;
+                  break;
+              }
+          }
       }
     }
 
     CDVPluginResult *pluginResult = nil;
     if (theEvent != nil) {
-      NSDictionary* newCalOptions = [options objectForKey:@"newOptions"];
-      NSString* newCalendarName = [newCalOptions objectForKey:@"calendarName"];
       if (newCalendarName != (id)[NSNull null]) {
         theEvent.calendar = [self findEKCalendar:calendarName];
         if (theEvent.calendar == nil) {
@@ -241,7 +253,12 @@
 
       // Now save the new details back to the store
       NSError *error = nil;
-      [self.eventStore saveEvent:theEvent span:EKSpanThisEvent error:&error];
+        if ([modifyTarget  isEqualToString: @"instance"]) {
+            [self.eventStore saveEvent:theEvent span:EKSpanThisEvent error:&error];
+        } else {
+            [self.eventStore saveEvent:theEvent span:EKSpanFutureEvents error:&error];
+        }
+      
 
 
       // Check error code + return result
