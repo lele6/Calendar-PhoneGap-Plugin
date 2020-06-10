@@ -965,6 +965,7 @@
   NSDictionary* options = [command.arguments objectAtIndex:0];
   NSString* ciid = [options objectForKey:@"id"];
   NSNumber* fromTime = [options objectForKey:@"fromTime"];
+  NSString* modifyTarget = [options objectForKey:@"modifyTarget"];
 
   [self.commandDelegate runInBackground: ^{
 
@@ -996,7 +997,12 @@
 
       // Delete
       NSError *error = nil;
-      [eventStore removeEvent:instance span:EKSpanFutureEvents error:&error];
+        if ([modifyTarget isEqualToString:@"instance"]) {
+            [eventStore removeEvent:instance span:EKSpanThisEvent error:&error];
+        } else {
+            [eventStore removeEvent:instance span:EKSpanFutureEvents error:&error];
+        }
+      
       if (error != nil) {
         // Fail
         [self.commandDelegate
