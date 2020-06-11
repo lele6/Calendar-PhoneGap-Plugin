@@ -49,6 +49,7 @@ public class Calendar extends CordovaPlugin {
   private static final String ACTION_LIST_CALENDARS = "listCalendars";
   private static final String ACTION_CREATE_CALENDAR = "createCalendar";
   private static final String ACTION_DELETE_CALENDAR = "deleteCalendar";
+  private static final String ACTION_MODIFY_EVENT_WITH_OPTIONS = "modifyEventWithOptions";
 
   // write permissions
   private static final int PERMISSION_REQCODE_CREATE_CALENDAR = 100;
@@ -106,6 +107,9 @@ public class Calendar extends CordovaPlugin {
     } else if (!hasLimitedSupport && ACTION_DELETE_EVENT_BY_ID.equals(action)) {
       deleteEventById(args);
       return true;
+    } else if (!hasLimitedSupport && ACTION_MODIFY_EVENT_WITH_OPTIONS.equals(action)) {
+        modifyEventWithOptions(args);
+        return true;
     } else if (ACTION_LIST_CALENDARS.equals(action)) {
       listCalendars();
       return true;
@@ -503,6 +507,57 @@ public class Calendar extends CordovaPlugin {
       }
     }});
   }
+
+    private void modifyEventWithOptions(final JSONArray args) {
+
+        // note that if the dev didn't call requestWritePermission before calling this method and calendarPermissionGranted returns false,
+        // the app will ask permission and this method needs to be invoked again (done for backward compat).
+        if (!calendarPermissionGranted(Manifest.permission.WRITE_CALENDAR)) {
+            requestWritePermission(PERMISSION_REQCODE_DELETE_EVENT_BY_ID);
+            return;
+        }
+
+        cordova.getThreadPool().execute(new Runnable() { @Override public void run() {
+            try {
+                final JSONObject argObject = args.getJSONObject(0);
+                final JSONObject options = argObject.getJSONObject("options");
+                final JSONObject argOptionsObject = argObject.getJSONObject("newOptions");
+                final long id = options != null ? options.optLong("id", -1) : -1;
+                final long fromTime =  options != null ? argObject.optLong("fromTime", -1) : -1;
+
+                boolean deleteResult = getCalendarAccessor().deleteEventById(null, id, fromTime);
+                final String createdEventID = getCalendarAccessor().createEvent(
+                        null,
+                        getPossibleNullString("newTitle", argObject),
+                        argObject.getLong("newStartTime"),
+                        argObject.getLong("newEndTime"),
+                        getPossibleNullString("newNotes", argObject),
+                        getPossibleNullString("newLocation", argObject),
+                        argOptionsObject.optLong("firstReminderMinutes", -1),
+                        argOptionsObject.optLong("secondReminderMinutes", -1),
+                        getPossibleNullString("recurrence", argOptionsObject),
+                        argOptionsObject.optInt("recurrenceInterval", -1),
+                        getPossibleNullString("recurrenceWeekstart", argOptionsObject),
+                        getPossibleNullString("recurrenceByDay", argOptionsObject),
+                        getPossibleNullString("recurrenceByMonthDay", argOptionsObject),
+                        getPossibleNullString("recurrenceByMonth", argOptionsObject),
+                        getPossibleNullString("recurrenceBySetpos", argOptionsObject),
+                        argOptionsObject.optLong("recurrenceEndTime", -1),
+                        argOptionsObject.optLong("recurrenceCount", -1),
+                        getPossibleNullString("allday", argOptionsObject),
+                        options.optInt("calendarId", 1),
+                        getPossibleNullString("url", argOptionsObject));
+                if (createdEventID != null) {
+                    callback.success(createdEventID);
+                } else {
+                    callback.error("Fail to modify an event");
+                }
+            } catch (Exception e) {
+                System.err.println("Exception: " + e.getMessage());
+                callback.error(e.getMessage());
+            }
+        }});
+    }
 
   private void findEvents(JSONArray args) {
     if (args.length() == 0) {
